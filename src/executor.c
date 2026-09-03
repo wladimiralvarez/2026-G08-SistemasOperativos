@@ -35,6 +35,12 @@ int execute_pipeline(pipeline_t *pl)
         return 1;
     }
 
+    // TODO R3: el parser ya llena infile y outfile, falta el open + dup2 en el hijo
+    if (cmd->infile != NULL || cmd->outfile != NULL) {
+        fprintf(stderr, "mishell: la redireccion todavia no esta implementada\n");
+        return 1;
+    }
+
     pid = fork();
 
     if (pid < 0) {

@@ -23,16 +23,19 @@ typedef struct {
     command_t cmds[MAX_CMDS];
     int       ncmds;       // cuántos comandos hay realmente en cmds
     int       background;  // 1 si la línea terminaba en &
-    // copia de la linea, sirve porque el parser destruye la linea. 
-    char      rawline[MAX_LINE];
+
+    char      rawline[MAX_LINE];   // linea original
+
+    //los argv apuntan aca dentro
+    char      work[MAX_LINE * 3];
 } pipeline_t;
 
 /*
  * retorna:
  *    1  línea parseada correctamente
  *    0  línea vacía o solo espacios
- *   -1  error de sintaxis 
+ *   -1  error de sintaxis
  */
-int parse_line(char *line, pipeline_t *pl);
+int parse_line(const char *line, pipeline_t *pl);
 
 #endif 
