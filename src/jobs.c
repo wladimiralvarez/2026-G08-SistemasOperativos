@@ -46,8 +46,9 @@ void jobs_list(void)
         if (jobs[i].state == JOB_FREE)
             continue;
 
-        printf("[%d] %-12s %s\n",
+        printf("[%d] %d %-12s %s\n",
                jobs[i].id,
+               (int)jobs[i].pid,
                jobs[i].state == JOB_RUNNING ? "Ejecutando" : "Terminado",
                jobs[i].cmdline);
     }

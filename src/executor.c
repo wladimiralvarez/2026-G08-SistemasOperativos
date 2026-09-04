@@ -1,7 +1,8 @@
-// fork + execvp + waitpid y el lugar donde ira la redireccion y los pipes
+// fork + execvp + waitpid y el lugar donde iran los pipes
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include "executor.h"
@@ -16,6 +17,51 @@ static int status_to_code(int status)
         return WEXITSTATUS(status);
     if (WIFSIGNALED(status))
         return 128 + WTERMSIG(status);
+    return 0;
+}
+
+//conecta stdin y stdout del hijo a los archivos que pidio el usuario
+static int apply_redirections(command_t *cmd)
+{
+    int fd;
+
+    if (cmd->infile != NULL) {
+
+        fd = open(cmd->infile, O_RDONLY);
+        if (fd == -1) {
+            fprintf(stderr, "mishell: %s: %s\n", cmd->infile, strerror(errno));
+            return -1;
+        }
+
+        //el descriptor 0 pasa a apuntar al archivo
+        if (dup2(fd, STDIN_FILENO) == -1) {
+            perror("mishell: dup2");
+            return -1;
+        }
+
+        close(fd);
+    }
+
+    if (cmd->outfile != NULL) {
+
+        //O_TRUNC vacia el archivo y O_APPEND escribe al final
+        int flags = O_WRONLY | O_CREAT | (cmd->append ? O_APPEND : O_TRUNC);
+
+        //0644 son los permisos por si hay que crearlo, lectura y escritura al dueño y lectura al resto
+        fd = open(cmd->outfile, flags, 0644);
+        if (fd == -1) {
+            fprintf(stderr, "mishell: %s: %s\n", cmd->outfile, strerror(errno));
+            return -1;
+        }
+
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+            perror("mishell: dup2");
+            return -1;
+        }
+
+        close(fd);
+    }
+
     return 0;
 }
 
@@ -35,12 +81,6 @@ int execute_pipeline(pipeline_t *pl)
         return 1;
     }
 
-    // TODO R3: el parser ya llena infile y outfile, falta el open + dup2 en el hijo
-    if (cmd->infile != NULL || cmd->outfile != NULL) {
-        fprintf(stderr, "mishell: la redireccion todavia no esta implementada\n");
-        return 1;
-    }
-
     pid = fork();
 
     if (pid < 0) {
@@ -53,7 +93,10 @@ int execute_pipeline(pipeline_t *pl)
         //el hijo hereda el SIG_IGN de la shell, hay que restaurarlo antes del exec
         signals_reset_child();
 
-        // TODO R3: redireccion
+        //el programa arranca con los descriptores ya puestos
+        if (apply_redirections(cmd) == -1)
+            _exit(1);
+
         execvp(cmd->argv[0], cmd->argv);
 
         // si execvp retorna es porque falló   
