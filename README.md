@@ -1,6 +1,6 @@
 # 2026-G08-SistemasOperativos
 
-**mishell** — Shell con pipes, redirección y manejo de señales.
+Shell con pipes, redirección y manejo de señales.
 Tarea 1 · Sistemas Operativos 2026 · Universidad de Concepción · Grupo 8
 
 ## Compilación
