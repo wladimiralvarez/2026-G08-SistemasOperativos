@@ -118,7 +118,7 @@ int execute_pipeline(pipeline_t *pl)
 
     if (pid < 0) {
         perror("mishell: fork");
-        return -1;
+        return EXEC_FATAL;
     }
 
     if (pid == 0) {

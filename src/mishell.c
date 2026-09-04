@@ -30,6 +30,7 @@ int main(void)
     char       line[MAX_LINE];
     pipeline_t pl;
     int        parsed;
+    int        code = 0;
 
     //la shell ignora SIGINT/SIGQUIT desde el arranque
     signals_setup_shell();
@@ -55,8 +56,12 @@ int main(void)
         if (parsed <= 0)
             continue;       // 0 si línea vacía, -1 si el error ya fue reportado 
 
-        execute_pipeline(&pl);
+        //si fork falla salimos avisando del error
+        if (execute_pipeline(&pl) == EXEC_FATAL) {
+            code = 1;
+            break;
+        }
     }
 
-    return 0;
+    return code;
 }
