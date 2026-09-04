@@ -65,6 +65,39 @@ static int apply_redirections(command_t *cmd)
     return 0;
 }
 
+//corre un built in en la shell, con su redireccion puesta y devolviendo los descriptores como estaban
+static int run_builtin_here(command_t *cmd)
+{
+    int saved_in, saved_out, code;
+
+    if (cmd->infile == NULL && cmd->outfile == NULL)
+        return run_builtin(cmd);
+
+    //dup copia un descriptor al primer numero libre
+    saved_in  = dup(STDIN_FILENO);
+    saved_out = dup(STDOUT_FILENO);
+
+    if (saved_in == -1 || saved_out == -1) {
+        perror("mishell: dup");
+        return 1;
+    }
+
+    if (apply_redirections(cmd) == -1)
+        code = 1;
+    else
+        code = run_builtin(cmd);
+
+    //los built ins imprimen con printf
+    fflush(stdout);
+
+    dup2(saved_in,  STDIN_FILENO);
+    dup2(saved_out, STDOUT_FILENO);
+    close(saved_in);
+    close(saved_out);
+
+    return code;
+}
+
 int execute_pipeline(pipeline_t *pl)
 {
     command_t *cmd = &pl->cmds[0];
@@ -73,7 +106,7 @@ int execute_pipeline(pipeline_t *pl)
 
     //un built in en primer plano se ejecuta en la shell, si estuviera dentro de una tuberia bash lo corre en un hijo
     if (pl->ncmds == 1 && !pl->background && is_builtin(cmd->argv[0]))
-        return run_builtin(cmd);
+        return run_builtin_here(cmd);
 
     // TODO R4: pipes de largo arbitrario.
     if (pl->ncmds > 1) {
