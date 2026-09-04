@@ -85,8 +85,20 @@ static int builtin_exit(command_t *cmd)
 {
     int code = 0;
 
-    if (cmd->argc >= 2)
-        code = atoi(cmd->argv[1]);
+    if (cmd->argc >= 2) {
+
+        char *fin;
+        long  n = strtol(cmd->argv[1], &fin, 10);
+
+        //fin queda en el primer caracter que no se pudo convertir, si no es el \0
+        //final es que el argumento no era solo un numero
+        if (fin == cmd->argv[1] || *fin != '\0') {
+            fprintf(stderr, "exit: %s: se necesita un argumento numerico\n", cmd->argv[1]);
+            exit(2);
+        }
+
+        code = (int)n;
+    }
 
     // TODO R5: antes de salir, avisar si quedan jobs en background o mandarles SIGHUP. 
 
