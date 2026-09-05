@@ -63,22 +63,35 @@ job_t *jobs_get(int index)
     return &jobs[index];
 }
 
+//corre dentro del manejador de SIGCHLD, asi que solo escribe en la tabla
 void jobs_mark_done(pid_t pid, int status)
 {
-    /*
-     * TODO R5: buscar el job con ese pid y hacer
-     *     jobs[i].state  = JOB_DONE;
-     *     jobs[i].status = status;
-     */
-    (void)pid;      
-    (void)status;   
+    int i;
+
+    for (i = 0; i < MAX_JOBS; i++) {
+        if (jobs[i].state == JOB_RUNNING && jobs[i].pid == pid) {
+            jobs[i].status = status;
+            jobs[i].state  = JOB_DONE;
+            return;
+        }
+    }
+
+    //si el pid no esta en la tabla era un hijo de primer plano
 }
 
+//corre en el bucle principal
 void jobs_report_finished(void)
 {
-    /*
-     * TODO R5: recorrer la tabla y por cada job en JOB_DONE imprimir:
-     *     [1]+ Done   sleep 30
-     *y dejar la ranura libre (state = JOB_FREE) para que no se avise dos veces. 
-     */
+    int i;
+
+    for (i = 0; i < MAX_JOBS; i++) {
+
+        if (jobs[i].state != JOB_DONE)
+            continue;
+
+        printf("[%d]+ Done   %s\n", jobs[i].id, jobs[i].cmdline);
+
+        //liberamos la ranura para no avisar dos veces del mismo job
+        jobs[i].state = JOB_FREE;
+    }
 }

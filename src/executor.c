@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include "executor.h"
@@ -100,14 +101,19 @@ static int run_builtin_here(command_t *cmd)
 
 int execute_pipeline(pipeline_t *pl)
 {
-    pid_t pids[MAX_CMDS];
-    pid_t last;
-    int   prev_read = -1;   // extremo de lectura del pipe del comando anterior
-    int   i, status, code = 0;
+    pid_t    pids[MAX_CMDS];
+    pid_t    last;
+    sigset_t mask, prev;
+    int      prev_read = -1;   // extremo de lectura del pipe del comando anterior
+    int      i, status, code = 0;
 
     //un built in en primer plano se ejecuta en la shell, si estuviera dentro de una tuberia bash lo corre en un hijo
     if (pl->ncmds == 1 && !pl->background && is_builtin(pl->cmds[0].argv[0]))
         return run_builtin_here(&pl->cmds[0]);
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &mask, &prev);
 
     for (i = 0; i < pl->ncmds; i++) {
 
@@ -120,6 +126,7 @@ int execute_pipeline(pipeline_t *pl)
             perror("mishell: pipe");
             if (prev_read != -1)
                 close(prev_read);
+            sigprocmask(SIG_SETMASK, &prev, NULL);
             return -1;
         }
 
@@ -130,6 +137,7 @@ int execute_pipeline(pipeline_t *pl)
 
         if (pid < 0) {
             perror("mishell: fork");
+            sigprocmask(SIG_SETMASK, &prev, NULL);
             return EXEC_FATAL;
         }
 
@@ -137,6 +145,9 @@ int execute_pipeline(pipeline_t *pl)
 
             //el hijo hereda el SIG_IGN de la shell, hay que restaurarlo antes del exec
             signals_reset_child();
+
+            //la mascara de señales tambien se hereda y sobrevive al exec
+            sigprocmask(SIG_SETMASK, &prev, NULL);
 
             //su entrada viene del pipe anterior
             if (prev_read != -1) {
@@ -193,6 +204,9 @@ int execute_pipeline(pipeline_t *pl)
         int id = jobs_add(last, pl->rawline);
         if (id > 0)
             printf("[%d] %d\n", id, (int)last);
+
+        //ya esta anotado, ahora el manejador puede recogerlo sin perderselo
+        sigprocmask(SIG_SETMASK, &prev, NULL);
         return 0;
     }
 
@@ -206,6 +220,8 @@ int execute_pipeline(pipeline_t *pl)
         if (pids[i] == last)
             code = status_to_code(status);
     }
+
+    sigprocmask(SIG_SETMASK, &prev, NULL);
 
     return code;
 }

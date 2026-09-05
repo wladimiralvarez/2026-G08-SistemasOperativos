@@ -3,7 +3,8 @@
 #ifndef JOBS_H
 #define JOBS_H
 
-#include <sys/types.h>  
+#include <sys/types.h>
+#include <signal.h>
 #include "mishell.h"
 
 //estados posibles de un job
@@ -16,7 +17,10 @@ typedef enum {
 typedef struct {
     int         id;                  //numero que ve el usuario
     pid_t       pid;
-    job_state_t state;
+
+    //lo escribe el manejador de SIGCHLD y lo lee el bucle principal. 
+    volatile sig_atomic_t state;
+
     int         status;              // valor que devolvió waitpid
     char        cmdline[MAX_LINE];   // texto original 
 } job_t;
