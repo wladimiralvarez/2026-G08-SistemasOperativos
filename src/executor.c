@@ -100,61 +100,112 @@ static int run_builtin_here(command_t *cmd)
 
 int execute_pipeline(pipeline_t *pl)
 {
-    command_t *cmd = &pl->cmds[0];
-    pid_t      pid;
-    int        status;
+    pid_t pids[MAX_CMDS];
+    pid_t last;
+    int   prev_read = -1;   // extremo de lectura del pipe del comando anterior
+    int   i, status, code = 0;
 
     //un built in en primer plano se ejecuta en la shell, si estuviera dentro de una tuberia bash lo corre en un hijo
-    if (pl->ncmds == 1 && !pl->background && is_builtin(cmd->argv[0]))
-        return run_builtin_here(cmd);
+    if (pl->ncmds == 1 && !pl->background && is_builtin(pl->cmds[0].argv[0]))
+        return run_builtin_here(&pl->cmds[0]);
 
-    // TODO R4: pipes de largo arbitrario.
-    if (pl->ncmds > 1) {
-        fprintf(stderr, "mishell: los pipes todavia no estan implementados\n");
-        return 1;
+    for (i = 0; i < pl->ncmds; i++) {
+
+        command_t *cmd = &pl->cmds[i];
+        pid_t      pid;
+        int        fd[2];
+
+        //un pipe entre cada par de comandos, ncmds-1 en total
+        if (i < pl->ncmds - 1 && pipe(fd) == -1) {
+            perror("mishell: pipe");
+            if (prev_read != -1)
+                close(prev_read);
+            return -1;
+        }
+
+        //vaciamos antes del fork
+        fflush(stdout);
+
+        pid = fork();
+
+        if (pid < 0) {
+            perror("mishell: fork");
+            return EXEC_FATAL;
+        }
+
+        if (pid == 0) {
+
+            //el hijo hereda el SIG_IGN de la shell, hay que restaurarlo antes del exec
+            signals_reset_child();
+
+            //su entrada viene del pipe anterior
+            if (prev_read != -1) {
+                dup2(prev_read, STDIN_FILENO);
+                close(prev_read);
+            }
+
+            //su salida va al pipe que acabamos de crear
+            if (i < pl->ncmds - 1) {
+                close(fd[0]);
+                dup2(fd[1], STDOUT_FILENO);
+                close(fd[1]);
+            }
+
+            //va despues de los pipes, asi una redireccion explicita le gana al pipe
+            if (apply_redirections(cmd) == -1)
+                _exit(1);
+
+            //un built in dentro de una tuberia corre aqui
+            if (is_builtin(cmd->argv[0])) {
+                int c = run_builtin(cmd);
+                fflush(stdout);   //_exit no vacia los buffers
+                _exit(c);
+            }
+
+            execvp(cmd->argv[0], cmd->argv);
+
+            // si execvp retorna es porque falló
+            fprintf(stderr, "mishell: %s: %s\n", cmd->argv[0], strerror(errno));
+
+            //_exit y no exit, el hijo heredó los buffers del padre y se imprimirían dos veces
+            _exit(127);
+        }
+
+        //proceso padre
+
+        pids[i] = pid;
+
+        //el padre no participa en la tuberia
+        if (prev_read != -1)
+            close(prev_read);
+
+        if (i < pl->ncmds - 1) {
+            close(fd[1]);
+            prev_read = fd[0];   // se lo pasamos al hijo siguiente
+        }
     }
 
-    pid = fork();
-
-    if (pid < 0) {
-        perror("mishell: fork");
-        return EXEC_FATAL;
-    }
-
-    if (pid == 0) {
-
-        //el hijo hereda el SIG_IGN de la shell, hay que restaurarlo antes del exec
-        signals_reset_child();
-
-        //el programa arranca con los descriptores ya puestos
-        if (apply_redirections(cmd) == -1)
-            _exit(1);
-
-        execvp(cmd->argv[0], cmd->argv);
-
-        // si execvp retorna es porque falló   
-        fprintf(stderr, "mishell: %s: %s\n", cmd->argv[0], strerror(errno));
-
-        //_exit y no exit, el hijo heredó los buffers del padre y se imprimirían dos veces
-        _exit(127);
-    }
-
-    //proceso padre
+    last = pids[pl->ncmds - 1];
 
     if (pl->background) {
-        
-        //registramos el job y volvemos al prompt, se debe hacer que sigchld recoja a este hijo
-        int id = jobs_add(pid, pl->rawline);
+
+        //registramos el job con el pid del ultimo
+        int id = jobs_add(last, pl->rawline);
         if (id > 0)
-            printf("[%d] %d\n", id, (int)pid);
+            printf("[%d] %d\n", id, (int)last);
         return 0;
     }
 
-    //bloqueamos hasta que el hijo termine
-    if (waitpid(pid, &status, 0) == -1) {
-        perror("mishell: waitpid");
-        return -1;
+    for (i = 0; i < pl->ncmds; i++) {
+
+        if (waitpid(pids[i], &status, 0) == -1) {
+            perror("mishell: waitpid");
+            continue;
+        }
+
+        if (pids[i] == last)
+            code = status_to_code(status);
     }
 
-    return status_to_code(status);
+    return code;
 }
