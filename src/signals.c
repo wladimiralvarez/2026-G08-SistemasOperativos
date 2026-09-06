@@ -25,7 +25,7 @@ static void install(int signum, void (*handler)(int), int flags)
 
 //recoge a los hijos que ya murieron, el kernel manda SIGCHLD cada vez que uno termina
 static void on_sigchld(int signum)
-
+{
     int   saved_errno = errno;
     pid_t pid;
     int   status;
