@@ -103,6 +103,7 @@ int execute_pipeline(pipeline_t *pl)
 {
     pid_t    pids[MAX_CMDS];
     pid_t    last;
+    pid_t    pgid = 0;         // grupo de la tuberia, lo define el primer hijo
     sigset_t mask, prev;
     int      prev_read = -1;   // extremo de lectura del pipe del comando anterior
     int      i, status, code = 0;
@@ -149,6 +150,12 @@ int execute_pipeline(pipeline_t *pl)
             //la mascara de señales tambien se hereda y sobrevive al exec
             sigprocmask(SIG_SETMASK, &prev, NULL);
 
+            //el Ctrl+C del terminal va a todo el grupo de primer plano. los de
+            //background se mudan a su propio grupo para que no los alcance, los
+            //de primer plano se quedan en el de la shell y si deben morir
+            if (pl->background)
+                setpgid(0, pgid);
+
             //su entrada viene del pipe anterior
             if (prev_read != -1) {
                 dup2(prev_read, STDIN_FILENO);
@@ -185,6 +192,13 @@ int execute_pipeline(pipeline_t *pl)
         //proceso padre
 
         pids[i] = pid;
+
+        //el mismo setpgid lo hacen padre e hijo, gana el que llegue primero.
+        if (pl->background) {
+            if (pgid == 0)
+                pgid = pid;
+            setpgid(pid, pgid);
+        }
 
         //el padre no participa en la tuberia
         if (prev_read != -1)
