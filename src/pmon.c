@@ -1,5 +1,6 @@
 //monitor de procesos
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
@@ -132,16 +133,31 @@ static const char *nombre_estado(char c)
     }
 }
 
+//juntamos las filas antes de imprimir
+typedef struct {
+    pid_t       pid;
+    const char *cmd;
+    const char *estado;
+    double      pct;
+    long        rss;
+} fila_t;
+
+//de mayor a menor %CPU
+static int cmp_pct(const void *a, const void *b)
+{
+    const fila_t *x = a;
+    const fila_t *y = b;
+
+    if (x->pct < y->pct) return  1;
+    if (x->pct > y->pct) return -1;
+    return 0;
+}
+
 static void dibujar(int seconds, double transcurrido)
 {
-    long ticks_seg = sysconf(_SC_CLK_TCK);   //cuantos ticks trae un segundo
-    int  i, n = 0;
-
-    printf("\033[H\033[J");
-
-    printf("pmon - refresco cada %d s - Ctrl+C para volver al prompt\n\n", seconds);
-    printf("%-8s %-26s %-12s %12s %10s\n",
-           "PID", "COMANDO", "ESTADO", "%CPU(aprox)", "RSS(KB)");
+    long   ticks_seg = sysconf(_SC_CLK_TCK);   //cuantos ticks trae un segundo
+    fila_t filas[MAX_JOBS];
+    int    i, n = 0;
 
     for (i = 0; i < MAX_JOBS; i++) {
 
@@ -163,9 +179,32 @@ static void dibujar(int seconds, double transcurrido)
 
         guardar_cpu(j->pid, cpu);
 
-        printf("%-8d %-26.26s %-12s %12.1f %10ld\n",
-               (int)j->pid, j->cmdline, nombre_estado(estado), pct, leer_rss(j->pid));
+        filas[n].pid    = j->pid;
+        filas[n].cmd    = j->cmdline;
+        filas[n].estado = nombre_estado(estado);
+        filas[n].pct    = pct;
+        filas[n].rss    = leer_rss(j->pid);
         n++;
+    }
+
+    qsort(filas, n, sizeof(filas[0]), cmp_pct);
+
+    printf("\033[H\033[J");
+
+    printf("pmon - refresco cada %d s - Ctrl+C para volver al prompt\n\n", seconds);
+    printf("%-8s %-26s %-12s %12s %10s\n",
+           "PID", "COMANDO", "ESTADO", "%CPU(aprox)", "RSS(KB)");
+
+    for (i = 0; i < n; i++) {
+
+        //el que mas CPU usa va en negrita si usa algo
+        int destacar = (i == 0 && filas[i].pct > 0.0);
+
+        printf("%s%-8d %-26.26s %-12s %12.1f %10ld%s\n",
+               destacar ? "\033[1m" : "",
+               (int)filas[i].pid, filas[i].cmd, filas[i].estado,
+               filas[i].pct, filas[i].rss,
+               destacar ? "\033[0m" : "");
     }
 
     if (n == 0)
@@ -194,6 +233,8 @@ int pmon_run(int seconds)
     sigaction(SIGINT, &sa, &old_int);
 
     //las bloqueamos y esperamos con sigsuspend, que desbloquea y espera 
+    sigemptyset(&bloquear);
+    sigaddset(&bloquear, SIGALRM);
     sigaddset(&bloquear, SIGINT);
     sigprocmask(SIG_BLOCK, &bloquear, &antes_mask);
 
