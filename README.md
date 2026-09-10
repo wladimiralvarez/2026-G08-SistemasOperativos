@@ -1,7 +1,7 @@
 # 2026-G08-SistemasOperativos
 
 Shell con pipes, redirección y manejo de señales.
-Tarea 1 · Sistemas Operativos 2026 · Universidad de Concepción · Grupo 8
+Tarea 1 · Sistemas Operativos 2026 · Grupo 14
 
 ## Compilación
 
